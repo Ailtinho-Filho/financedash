@@ -1,0 +1,32 @@
+:root {
+  --bg: #0d1117; --card: #10151f; --border: #232a36;
+  --text: #e6e8ec; --muted: #8a91a0; --accent: #3ddc97; --accent-2: #ff5fa2;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.dashboard { max-width: 1000px; margin: 0 auto; padding: 24px; }
+header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+h1 { margin: 0; font-size: 22px; }
+.subtitle { color: var(--muted); margin: 4px 0 0; font-size: 14px; }
+.header-actions { display: flex; align-items: center; gap: 12px; }
+.badge { border: 1px solid var(--accent); color: var(--accent); padding: 6px 14px; border-radius: 999px; font-size: 13px; }
+.import-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; text-align: center; }
+.dropzone { border: 1px dashed var(--border); border-radius: 10px; padding: 48px; margin: 20px 0; cursor: pointer; }
+.dropzone label { cursor: pointer; color: var(--text); }
+.highlight { color: var(--accent); font-weight: 600; }
+.filename { color: var(--muted); margin-top: 8px; font-size: 13px; }
+.divider { color: var(--muted); margin: 16px 0; font-size: 13px; }
+.connect-btn { background: var(--accent); color: #06110c; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+.connect-btn:disabled { opacity: 0.6; cursor: default; }
+.accounts-section { margin-top: 32px; }
+.item-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; }
+.item-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+.item-card ul { list-style: none; padding: 0; margin: 12px 0 0; }
+.item-card li { padding: 6px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.link-btn { background: none; border: none; color: var(--accent-2); cursor: pointer; font-size: 13px; }
+.error { color: #ff6b6b; font-size: 13px; }
+.auth-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+.auth-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; width: 340px; display: flex; flex-direction: column; gap: 12px; }
+.auth-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.auth-card input { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; color: var(--text); }
+.auth-card button[type="submit"] { background: var(--accent); color: #06110c; border: none; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 8px; }
