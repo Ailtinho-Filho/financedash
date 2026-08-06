@@ -3,130 +3,61 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FinanceDash</title>
+  <title>FinanceDash — Entrar</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="dashboard">
-    <header>
-      <div>
-        <h1>FinanceDash</h1>
-        <p class="subtitle">Leitura de extratos em PDF ou conexão direta via Open Finance</p>
-      </div>
-      <div class="header-actions">
-        <span class="badge">Processamento local</span>
-        <button class="link-btn" id="logout-btn">Sair</button>
-      </div>
-    </header>
-
-    <section class="import-card">
-      <h2>Importar extrato</h2>
-      <p>PDF do Nubank, Itaú, Inter, Bradesco, C6 etc. ou conecte seu banco direto.</p>
-      <div class="dropzone" id="dropzone">
-        <label for="pdf-input"><span class="highlight">Clique</span> ou arraste o PDF aqui</label>
-        <input type="file" id="pdf-input" accept="application/pdf" hidden />
-        <p class="filename" id="filename" hidden></p>
-      </div>
-      <div class="divider">ou</div>
-      <button class="connect-btn" id="connect-btn">Conectar banco (Open Finance)</button>
-      <p class="error" id="connect-error" hidden></p>
-    </section>
-
-    <section class="accounts-section" id="accounts-section" hidden>
-      <h2>Contas conectadas</h2>
-      <div id="items-list"></div>
-    </section>
+  <div class="auth-page">
+    <form class="auth-card" id="auth-form">
+      <h1>FinanceDash</h1>
+      <p class="subtitle" id="auth-subtitle">Entre na sua conta</p>
+      <label>Email<input type="email" id="email" required /></label>
+      <label>Senha<input type="password" id="password" minlength="6" required /></label>
+      <p class="error" id="auth-error" hidden></p>
+      <button type="submit" id="submit-btn">Entrar</button>
+      <button type="button" class="link-btn" id="toggle-mode">Criar uma conta</button>
+    </form>
   </div>
 
   <script src="/api.js"></script>
   <script>
-    if (!localStorage.getItem("token")) window.location.href = "/login.html";
+    let mode = "login";
+    const form = document.getElementById("auth-form");
+    const subtitle = document.getElementById("auth-subtitle");
+    const submitBtn = document.getElementById("submit-btn");
+    const toggleBtn = document.getElementById("toggle-mode");
+    const errorEl = document.getElementById("auth-error");
 
-    document.getElementById("logout-btn").addEventListener("click", () => {
-      localStorage.removeItem("token");
-      window.location.href = "/login.html";
+    if (localStorage.getItem("token")) window.location.href = "/index.html";
+
+    toggleBtn.addEventListener("click", () => {
+      mode = mode === "login" ? "register" : "login";
+      subtitle.textContent = mode === "login" ? "Entre na sua conta" : "Crie sua conta";
+      submitBtn.textContent = mode === "login" ? "Entrar" : "Criar conta";
+      toggleBtn.textContent = mode === "login" ? "Criar uma conta" : "Já tenho conta";
+      errorEl.hidden = true;
     });
 
-    const dropzone = document.getElementById("dropzone");
-    const pdfInput = document.getElementById("pdf-input");
-    const filenameEl = document.getElementById("filename");
-    dropzone.addEventListener("click", () => pdfInput.click());
-    dropzone.addEventListener("dragover", (e) => e.preventDefault());
-    dropzone.addEventListener("drop", (e) => {
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const file = e.dataTransfer.files?.[0];
-      if (file) showFilename(file);
-    });
-    pdfInput.addEventListener("change", () => {
-      if (pdfInput.files?.[0]) showFilename(pdfInput.files[0]);
-    });
-    function showFilename(file) {
-      filenameEl.textContent = file.name;
-      filenameEl.hidden = false;
-    }
-
-    const connectBtn = document.getElementById("connect-btn");
-    const connectError = document.getElementById("connect-error");
-    connectBtn.addEventListener("click", async () => {
-      connectError.hidden = true;
-      connectBtn.disabled = true;
-      connectBtn.textContent = "Abrindo...";
+      errorEl.hidden = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Aguarde...";
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
       try {
-        const { accessToken } = await api.getConnectToken();
-        const pluggyConnect = new window.PluggyConnect({
-          connectToken: accessToken,
-          includeSandbox: true,
-          onSuccess: async (itemData) => {
-            try {
-              await api.linkItem(itemData.item.id);
-              await refreshItems();
-            } catch (err) { showConnectError(err.message); }
-          },
-          onError: (err) => showConnectError(err?.message || "Erro ao conectar banco."),
-        });
-        pluggyConnect.init();
+        const fn = mode === "login" ? api.login : api.register;
+        const { token } = await fn(email, password);
+        localStorage.setItem("token", token);
+        window.location.href = "/index.html";
       } catch (err) {
-        showConnectError(err.message);
+        errorEl.textContent = err.message;
+        errorEl.hidden = false;
       } finally {
-        connectBtn.disabled = false;
-        connectBtn.textContent = "Conectar banco (Open Finance)";
+        submitBtn.disabled = false;
+        submitBtn.textContent = mode === "login" ? "Entrar" : "Criar conta";
       }
     });
-    function showConnectError(msg) {
-      connectError.textContent = msg;
-      connectError.hidden = false;
-    }
-
-    const accountsSection = document.getElementById("accounts-section");
-    const itemsList = document.getElementById("items-list");
-    async function refreshItems() {
-      const { itemIds } = await api.listItems();
-      if (itemIds.length === 0) { accountsSection.hidden = true; return; }
-      accountsSection.hidden = false;
-      itemsList.innerHTML = "";
-      for (const itemId of itemIds) {
-        const card = document.createElement("div");
-        card.className = "item-card";
-        card.innerHTML = `
-          <div class="item-header">
-            <span>Item ${itemId.slice(0, 8)}...</span>
-            <button class="link-btn" data-item-id="${itemId}">Desconectar</button>
-          </div>
-          <ul id="accounts-${itemId}"></ul>
-        `;
-        itemsList.appendChild(card);
-        card.querySelector("button").addEventListener("click", async () => {
-          await api.removeItem(itemId);
-          await refreshItems();
-        });
-        try {
-          const { accounts } = await api.listAccounts(itemId);
-          const ul = card.querySelector(`#accounts-${itemId}`);
-          ul.innerHTML = accounts.map((acc) => `<li>${acc.name} — ${acc.currencyCode} ${acc.balance}</li>`).join("");
-        } catch {}
-      }
-    }
-    refreshItems();
   </script>
 </body>
 </html>
