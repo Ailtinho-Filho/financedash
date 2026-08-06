@@ -160,7 +160,12 @@ h1 { margin: 0; font-size: 22px; }
 .transaction-amount { font-weight: 600; font-size: 14px; }
 .transaction-amount.expense { color: var(--accent-2); }
 .transaction-amount.income { color: var(--accent); }
-
+.empty-state {
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 24px 0;
+}
 @media (max-width: 640px) {
   .spending-grid { grid-template-columns: 1fr; }
 }
