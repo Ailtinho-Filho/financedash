@@ -25,5 +25,9 @@ const api = {
   linkItem: (itemId) => apiRequest("/pluggy/items", { method: "POST", body: JSON.stringify({ itemId }) }),
   listItems: () => apiRequest("/pluggy/items"),
   removeItem: (itemId) => apiRequest(`/pluggy/items/${itemId}`, { method: "DELETE" }),
-  listAccounts: (itemId) => apiRequest(`/pluggy/items/${itemId}/accounts`),
+ listAccounts: (itemId) => apiRequest(`/pluggy/items/${itemId}/accounts`),
+  listTransactions: (accountId, params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiRequest(`/pluggy/accounts/${accountId}/transactions${qs ? `?${qs}` : ""}`);
+  },
 };
