@@ -22,14 +22,8 @@
     </header>
 
     <section class="import-card">
-      <h2>Importar extrato</h2>
-      <p>PDF do Nubank, Itaú, Inter, Bradesco, C6 etc. ou conecte seu banco direto.</p>
-      <div class="dropzone" id="dropzone">
-        <label for="pdf-input"><span class="highlight">Clique</span> ou arraste o PDF aqui</label>
-        <input type="file" id="pdf-input" accept="application/pdf" hidden />
-        <p class="filename" id="filename" hidden></p>
-      </div>
-      <div class="divider">ou</div>
+      <h2>Conectar banco</h2>
+      <p>Conecte sua conta via Open Finance para importar transações automaticamente.</p>
       <button class="connect-btn" id="connect-btn">Conectar banco (Open Finance)</button>
       <p class="error" id="connect-error" hidden></p>
     </section>
@@ -64,25 +58,6 @@
       localStorage.removeItem("token");
       window.location.href = "/login.html";
     });
-
-    // --- Upload de PDF (mantém comportamento visual original) ---
-    const dropzone = document.getElementById("dropzone");
-    const pdfInput = document.getElementById("pdf-input");
-    const filenameEl = document.getElementById("filename");
-    dropzone.addEventListener("click", () => pdfInput.click());
-    dropzone.addEventListener("dragover", (e) => e.preventDefault());
-    dropzone.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const file = e.dataTransfer.files?.[0];
-      if (file) showFilename(file);
-    });
-    pdfInput.addEventListener("change", () => {
-      if (pdfInput.files?.[0]) showFilename(pdfInput.files[0]);
-    });
-    function showFilename(file) {
-      filenameEl.textContent = file.name;
-      filenameEl.hidden = false;
-    }
 
     // --- Pluggy Connect ---
     const connectBtn = document.getElementById("connect-btn");
@@ -193,24 +168,32 @@
     ];
 
     async function loadSpendingAndTransactions() {
-      // Últimos 30 dias.
+      // Últimos 180 dias (dados de sandbox da Pluggy costumam ter datas fixas mais antigas).
       const to = new Date();
       const from = new Date();
-      from.setDate(from.getDate() - 30);
+      from.setDate(from.getDate() - 180);
       const params = { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10), pageSize: 500 };
 
       let allTransactions = [];
+      let hadError = false;
       for (const acc of allAccounts) {
         try {
           const data = await api.listTransactions(acc.id, params);
           allTransactions.push(...(data.results || []));
-        } catch {
-          // conta pode não suportar transações (ex: cartão de crédito ainda sincronizando)
+        } catch (err) {
+          hadError = true;
+          console.error("Falha ao buscar transações da conta", acc.id, err);
         }
       }
 
       if (allTransactions.length === 0) {
-        hideSpendingAndTransactions();
+        spendingSection.hidden = true;
+        transactionsSection.hidden = false;
+        transactionsListEl.innerHTML = `<p class="empty-state">${
+          hadError
+            ? "Não foi possível carregar as transações agora. Tente recarregar a página."
+            : "Nenhuma transação encontrada nos últimos 180 dias para as contas conectadas."
+        }</p>`;
         return;
       }
 
