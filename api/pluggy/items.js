@@ -1,5 +1,5 @@
 const { requireAuth } = require("../../lib/authHelper");
-const { addItemToUser, findUserByEmail } = require("../../lib/kv");
+const { addItemToUser, findUserByEmail, createItemRecord } = require("../../lib/kv");
 const { getItem } = require("../../lib/pluggyClient");
 
 module.exports = async (req, res) => {
@@ -17,6 +17,7 @@ module.exports = async (req, res) => {
       if (!itemId) return res.status(400).json({ error: "itemId é obrigatório." });
       const item = await getItem(itemId);
       await addItemToUser(user.email, itemId);
+      await createItemRecord(itemId, user.email);
       return res.status(201).json({ item });
     } catch (err) {
       console.error(err.response?.data || err.message);
