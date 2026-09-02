@@ -35,6 +35,12 @@ header{padding:calc(env(safe-area-inset-top) + 22px) 0 14px;display:flex;align-i
 .month-pick button{background:none;border:0;width:28px;height:28px;border-radius:999px;cursor:pointer;color:var(--ink-2);font-size:16px;line-height:1}
 .month-pick button:active{background:var(--line)}
 .month-pick span{font-size:13px;font-weight:600;padding:0 4px;min-width:66px;text-align:center;text-transform:capitalize}
+.brand-row{display:flex;align-items:center;gap:8px}
+.sync{font-size:10.5px;color:var(--ink-3);display:flex;align-items:center;gap:4px;margin-top:2px}
+.sync .d{width:6px;height:6px;border-radius:99px;background:var(--pine)}
+.sync.off .d{background:var(--line-2)}
+.sync.err .d{background:var(--rust)}
+.sync.busy .d{background:var(--gold)}
 
 .view{display:none;animation:in .18s ease-out}
 .view.on{display:block}
@@ -197,7 +203,10 @@ nav button.add span{color:var(--ink-3)}
 
 <div id="app">
   <header>
-    <div class="brand">Meu Caixa</div>
+    <div>
+      <div class="brand">Meu Caixa</div>
+      <div class="sync off" id="syncBadge"><span class="d"></span><span id="syncTxt">só neste aparelho</span></div>
+    </div>
     <div class="month-pick" id="monthPick">
       <button onclick="shiftMonth(-1)" aria-label="Mês anterior">&lsaquo;</button>
       <span id="monthLbl" class="num"></span>
@@ -293,9 +302,12 @@ nav button.add span{color:var(--ink-3)}
     </div>
     <div class="sec"><h2>Orçamento por categoria</h2></div>
     <div class="panel" id="budgetList"></div>
+    <div class="sec"><h2>Conta</h2></div>
+    <div class="panel" id="acctPanel"></div>
+
     <div class="sec"><h2>Seus dados</h2></div>
     <div class="panel">
-      <p class="hint" style="margin:0 0 12px">Tudo fica salvo só neste aparelho. Baixe uma cópia de vez em quando para não perder nada.</p>
+      <p class="hint" style="margin:0 0 12px">Uma cópia local fica sempre no aparelho. Baixe um backup de vez em quando para não depender só disso.</p>
       <button class="ghost" onclick="exportData()" style="margin-bottom:8px">Baixar cópia dos dados</button>
       <button class="ghost" onclick="document.getElementById('impFile').click()" style="margin-bottom:8px">Restaurar de um arquivo</button>
       <input type="file" id="impFile" accept="application/json" hidden onchange="importData(this)">
@@ -367,14 +379,134 @@ var PF    = load('mc_pf', PF_PAD);
 
 var ref = new Date(), type = 'out', pick = 'mercado', openAsset = null;
 
-function persist(){
+/* ---------------- sincronização com o servidor ----------------
+   O localStorage continua sendo a fonte imediata: o app abre e grava
+   sem rede. O servidor é uma segunda cópia, para abrir os mesmos dados
+   no celular e no computador. Quem tiver o updatedAt mais novo vence. */
+var SYNC = {
+  token: null,
+  pushing: false,
+  dirty: false,
+  timer: null,
+  lastPush: localStorage.getItem('mc_updated') || null
+};
+
+function token(){ return localStorage.getItem('token') }
+
+function setSync(state, txt){
+  var b=document.getElementById('syncBadge');
+  b.className='sync '+state;
+  document.getElementById('syncTxt').textContent=txt;
+}
+
+function snapshot(){ return {db:DB, cfg:CFG, goals:GOALS, pf:PF, v:2} }
+
+function applyDoc(d){
+  if(!d||!Array.isArray(d.db))return false;
+  DB=d.db;
+  CFG=Object.assign({},CFG_PAD,d.cfg||{});
+  CFG.orc=Object.assign({},CFG_PAD.orc,(d.cfg&&d.cfg.orc)||{});
+  GOALS=Array.isArray(d.goals)&&d.goals.length?d.goals:GOALS;
+  PF=Array.isArray(d.pf)&&d.pf.length?d.pf:PF;
+  writeLocal();
+  return true;
+}
+
+function writeLocal(){
   try{
     localStorage.setItem('mc_db',JSON.stringify(DB));
     localStorage.setItem('mc_cfg',JSON.stringify(CFG));
     localStorage.setItem('mc_goals',JSON.stringify(GOALS));
     localStorage.setItem('mc_pf',JSON.stringify(PF));
-  }catch(e){toast('Não deu para salvar')}
+  }catch(e){toast('Não deu para salvar neste aparelho')}
 }
+
+function persist(){
+  writeLocal();
+  if(token()){ SYNC.dirty=true; schedulePush() }
+}
+
+function schedulePush(){
+  clearTimeout(SYNC.timer);
+  SYNC.timer=setTimeout(push,1200);
+}
+
+function push(){
+  if(!token()||SYNC.pushing||!SYNC.dirty)return;
+  SYNC.pushing=true;
+  setSync('busy','salvando...');
+  fetch('/api/data',{
+    method:'PUT',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},
+    body:JSON.stringify(snapshot())
+  }).then(function(r){
+    if(r.status===401){ logout(); throw new Error('sessão'); }
+    if(!r.ok) throw new Error('http '+r.status);
+    return r.json();
+  }).then(function(j){
+    SYNC.dirty=false;
+    SYNC.lastPush=j.updatedAt;
+    localStorage.setItem('mc_updated',j.updatedAt);
+    setSync('','sincronizado');
+  }).catch(function(){
+    setSync('err','offline — salvo aqui');
+  }).then(function(){
+    SYNC.pushing=false;
+    if(SYNC.dirty) schedulePush();
+  });
+}
+
+function pull(){
+  if(!token()){ setSync('off','só neste aparelho'); return }
+  setSync('busy','carregando...');
+  fetch('/api/data',{headers:{'Authorization':'Bearer '+token()}})
+    .then(function(r){
+      if(r.status===401){ logout(); throw new Error('sessão'); }
+      if(!r.ok) throw new Error('http '+r.status);
+      return r.json();
+    }).then(function(d){
+      if(!d){ SYNC.dirty=true; push(); return }        // servidor vazio: sobe o que há aqui
+      var local=SYNC.lastPush;
+      if(!local || d.updatedAt > local){                // servidor mais novo: desce
+        applyDoc(d);
+        SYNC.lastPush=d.updatedAt;
+        localStorage.setItem('mc_updated',d.updatedAt);
+        draw();
+      }
+      setSync('','sincronizado');
+    }).catch(function(){
+      setSync('err','offline — usando cópia local');
+    });
+}
+
+function logout(){
+  localStorage.removeItem('token');
+  localStorage.removeItem('mc_updated');
+  SYNC.lastPush=null;
+  setSync('off','só neste aparelho');
+  drawAccount();
+}
+
+function drawAccount(){
+  var p=document.getElementById('acctPanel');
+  if(token()){
+    p.innerHTML='<p class="hint" style="margin:0 0 12px">Seus dados sincronizam entre os aparelhos em que você entrar com esta conta.</p>'+
+      '<button class="ghost" onclick="pull()" style="margin-bottom:8px">Sincronizar agora</button>'+
+      '<button class="ghost danger" onclick="logout()">Sair da conta</button>';
+  }else{
+    p.innerHTML='<p class="hint" style="margin:0 0 12px">Sem entrar, os dados ficam só neste aparelho. Entre para abrir os mesmos números no celular e no computador.</p>'+
+      '<button class="ghost" onclick="location.href=\'/login.html\'">Entrar ou criar conta</button>';
+  }
+}
+
+window.addEventListener('online', function(){ if(SYNC.dirty) push(); else pull() });
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState==='visible' && token()){ SYNC.dirty ? push() : pull() }
+});
+document.addEventListener('visibilitychange', function(){
+  // ao sair da aba, empurra o que estiver pendente antes de o app ser congelado
+  if(document.visibilityState==='hidden' && SYNC.dirty && token()){ clearTimeout(SYNC.timer); push() }
+});
 
 var BRL  = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 var BRL0 = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
@@ -401,6 +533,7 @@ function go(v){
   document.getElementById('n-'+v).classList.add('on');
   document.getElementById('monthPick').style.visibility=(v==='pf'||v==='set')?'hidden':'visible';
   window.scrollTo(0,0); draw();
+  if(v==='set') drawAccount();
 }
 function shiftMonth(n){ref=new Date(ref.getFullYear(),ref.getMonth()+n,1);draw()}
 
@@ -663,7 +796,7 @@ function importData(input){
       CFG.orc=Object.assign({},CFG_PAD.orc,(d.cfg&&d.cfg.orc)||{});
       GOALS=d.goals||GOALS_PAD;
       PF=Array.isArray(d.pf)?d.pf:PF;
-      persist(); draw(); toast('Dados restaurados');
+      persist(); draw(); toast(token()?'Dados restaurados e enviados':'Dados restaurados');
     }catch(e){toast('Arquivo inválido')}
     input.value='';
   };
@@ -681,6 +814,8 @@ function wipe(){
 document.getElementById('fDate').value=todayStr();
 setType('out');
 draw();
+drawAccount();
+pull();
 </script>
 </body>
 </html>
