@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinanceDash — Entrar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="auth-page">
+    <form class="auth-card" id="auth-form">
+      <h1>FinanceDash</h1>
+      <p class="subtitle" id="auth-subtitle">Entre na sua conta</p>
+      <label>Email<input type="email" id="email" required /></label>
+      <label>Senha<input type="password" id="password" minlength="6" required /></label>
+      <p class="error" id="auth-error" hidden></p>
+      <button type="submit" id="submit-btn">Entrar</button>
+      <button type="button" class="link-btn" id="toggle-mode">Criar uma conta</button>
+    </form>
+  </div>
+
+  <script src="/api.js"></script>
+  <script>
+    let mode = "login";
+    const form = document.getElementById("auth-form");
+    const subtitle = document.getElementById("auth-subtitle");
+    const submitBtn = document.getElementById("submit-btn");
+    const toggleBtn = document.getElementById("toggle-mode");
+    const errorEl = document.getElementById("auth-error");
+
+    if (localStorage.getItem("token")) window.location.href = "/index.html";
+
+    toggleBtn.addEventListener("click", () => {
+      mode = mode === "login" ? "register" : "login";
+      subtitle.textContent = mode === "login" ? "Entre na sua conta" : "Crie sua conta";
+      submitBtn.textContent = mode === "login" ? "Entrar" : "Criar conta";
+      toggleBtn.textContent = mode === "login" ? "Criar uma conta" : "Já tenho conta";
+      errorEl.hidden = true;
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorEl.hidden = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Aguarde...";
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        const fn = mode === "login" ? api.login : api.register;
+        const { token } = await fn(email, password);
+        localStorage.setItem("token", token);
+        window.location.href = "/index.html";
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.hidden = false;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = mode === "login" ? "Entrar" : "Criar conta";
+      }
+    });
+  </script>
+</body>
+</html>
