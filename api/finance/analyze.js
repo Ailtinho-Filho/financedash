@@ -1,7 +1,6 @@
-import { GoogleGenAI } from '@google/genai';
+import Groq from 'groq-sdk';
 
-const apiKey = process.env.GEMINI_API_KEY;
-const ai = new GoogleGenAI({ apiKey });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -9,10 +8,6 @@ export default async function handler(req, res) {
     }
 
     try {
-        if (!apiKey) {
-            return res.status(500).json({ error: 'Chave GEMINI_API_KEY não configurada.' });
-        }
-
         const { description, amount } = req.body;
 
         if (!description || typeof amount !== 'number') {
@@ -21,40 +16,31 @@ export default async function handler(req, res) {
             });
         }
 
-        const prompt = `Analise a transação financeira informada e retorne estritamente um objeto JSON com as chaves:
-        - "category": String (ex: Alimentação, Transporte, Moradia, Lazer, Investimentos, Saúde, Outros)
-        - "type": "EXPENSE" ou "INCOME"
-        - "is_anomaly": boolean (true se o valor for desproporcional ou suspeito)
-        - "insight": String curta com uma dica prática sobre esse gasto.
-
-        Transação: Descrição: "${description}", Valor: R$ ${amount}`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.6-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                systemInstruction: "Você é um motor de inteligência financeira estrito que retorna apenas dados em JSON válido."
-            }
+        const completion = await groq.chat.completions.create({
+            model: "llama-3.1-8b-instant",
+            messages: [
+                {
+                    role: "system",
+                    content: "Você é um motor de inteligência financeira. Retorne estritamente um JSON válido contendo: category (String), type ('EXPENSE' ou 'INCOME'), is_anomaly (boolean), insight (String curta)."
+                },
+                {
+                    role: "user",
+                    content: `Descrição: "${description}", Valor: R$ ${amount}`
+                }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.2
         });
 
-        const rawText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        const data = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+        const data = JSON.parse(completion.choices[0].message.content);
 
-        return res.status(200).json({
-            success: true,
-            data
-        });
+        return res.status(200).json({ success: true, data });
 
     } catch (error) {
-        console.error('[Finance AI Error]:', error);
-        
-        // Fallback robusto se a cota estourar (Erro 429) ou o serviço falhar
-        const isQuotaExceeded = error.status === 429 || String(error).includes('429');
-        
-        return res.status(isQuotaExceeded ? 429 : 500).json({ 
-            error: isQuotaExceeded ? 'Limite diário da API atingido.' : 'Erro interno ao processar análise.',
-            fallback: { category: 'Outros', type: 'EXPENSE', is_anomaly: false, insight: 'Serviço temporariamente indisponível. Classificado como Outros.' }
+        console.error('[Groq AI Error]:', error);
+        return res.status(500).json({ 
+            error: 'Erro ao processar análise.',
+            fallback: { category: 'Outros', type: 'EXPENSE', is_anomaly: false, insight: 'Erro temporário.' }
         });
     }
 }
