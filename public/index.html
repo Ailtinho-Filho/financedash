@@ -106,6 +106,19 @@ header{padding:calc(env(safe-area-inset-top) + 22px) 0 14px;display:flex;align-i
 .meter i.warn{background:var(--gold)} .meter i.over{background:var(--rust)}
 .weekbox .note{font-size:12px;color:var(--ink-3);margin-top:8px}
 
+.calc-panel{display:flex;flex-direction:column;gap:11px}
+.calc-row{display:grid;grid-template-columns:1fr 1.3fr;gap:10px}
+.calc-btn{margin-top:2px}
+.calc-out{border-radius:14px;padding:14px 15px;margin-top:2px}
+.calc-out.ok{background:var(--pine-soft)}
+.calc-out.warn{background:var(--gold-soft)}
+.calc-out.bad{background:var(--rust-soft)}
+.calc-out .co-title{font-size:14.5px;font-weight:600;margin-bottom:4px}
+.calc-out.ok .co-title{color:var(--pine)}
+.calc-out.warn .co-title{color:#8A6512}
+.calc-out.bad .co-title{color:var(--rust)}
+.calc-out .co-body{font-size:12.5px;color:var(--ink-2);line-height:1.5}
+
 .donut-wrap{display:flex;align-items:center;gap:16px}
 .donut{width:132px;height:132px;flex-shrink:0}
 .donut circle{fill:none;stroke-width:15}
@@ -209,6 +222,7 @@ input:focus,select:focus{border-color:var(--pine);box-shadow:0 0 0 3px var(--pin
 .goal .g1{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .goal .ge{font-size:19px} .goal .gn{font-size:14px;font-weight:500;flex:1}
 .goal .gp{font-size:13px;font-weight:600;color:var(--pine)}
+.goal .gp.gp-low{color:var(--rust)}
 .goal .gs{font-size:12px;color:var(--ink-3);margin-top:6px;display:flex;justify-content:space-between}
 .goal .gs button{background:none;border:0;color:var(--pine);font-size:12px;font-weight:600;cursor:pointer}
 
@@ -265,6 +279,22 @@ nav button.add span{color:var(--ink-3)}
       <div class="top"><span class="lbl" id="wkLbl">Esta semana</span><span class="amt num" id="wkAmt">—</span></div>
       <div class="meter"><i id="wkBar" style="width:0"></i></div>
       <div class="note" id="wkNote"></div>
+    </div>
+
+    <div class="sec"><h2>Posso gastar?</h2></div>
+    <div class="panel calc-panel">
+      <div class="calc-row">
+        <div class="field" style="margin-bottom:0"><label for="cVal">Quanto</label>
+          <input type="number" id="cVal" inputmode="decimal" placeholder="0,00" step="0.01"></div>
+        <div class="field" style="margin-bottom:0"><label for="cAte">Até quando precisa esticar</label>
+          <input type="date" id="cAte"></div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label for="cFonte">De onde sai</label>
+        <select id="cFonte"></select>
+      </div>
+      <button class="ghost calc-btn" onclick="calcularGasto()">Calcular</button>
+      <div id="calcResult"></div>
     </div>
 
     <div class="sec"><h2>Onde o dinheiro foi</h2></div>
@@ -408,8 +438,9 @@ var CFG_PAD = {renda:1500, teto:150, alvoRenda:1518, orc:{}, recur:[
 CATS.forEach(function(c){CFG_PAD.orc[c.id]=c.orc});
 
 var GOALS_PAD = [
-  {em:'\u{1F6DF}', nm:'Reserva de emergência', alvo:3000, atual:0},
-  {em:'\u{1F4B3}', nm:'Quitar as parcelas',    alvo:1800, atual:0}
+  {em:'\u{1F6DF}', nm:'Reserva de emergência', alvo:3000, atual:0,   tipo:'acumular'},
+  {em:'\u{1F4B3}', nm:'Quitar as parcelas',    alvo:1800, atual:0,   tipo:'acumular'},
+  {em:'\u{1F3E6}', nm:'Caixinha ML \u2014 dura at\u00e9 20/10', alvo:356, atual:356, tipo:'consumir'}
 ];
 var PF_PAD = [
   {tk:'MXRF11', tp:'FII',  qt:126, pr:10.30, dv:0.10, meta:500},
@@ -429,6 +460,10 @@ var CFG   = Object.assign({}, CFG_PAD, load('mc_cfg', {}));
 CFG.orc   = Object.assign({}, CFG_PAD.orc, CFG.orc||{});
 if(!Array.isArray(CFG.recur)) CFG.recur = CFG_PAD.recur.slice();
 var GOALS = load('mc_goals', GOALS_PAD);
+// quem já tinha metas salvas antes desta atualização ganha a caixinha nova também
+if(!GOALS.some(function(g){return g.nm.indexOf('Caixinha ML')===0})){
+  GOALS.push(JSON.parse(JSON.stringify(GOALS_PAD[2])));
+}
 var PF    = load('mc_pf', PF_PAD);
 
 var ref = new Date(), type = 'out', pick = 'mercado', openAsset = null, editId = null;
@@ -790,12 +825,83 @@ function delAsset(i){
   if(!confirm('Remover '+PF[i].tk+' da carteira?'))return;
   PF.splice(i,1); openAsset=null; persist(); draw(); toast('Ativo removido');
 }
+/* ---------------- calculadora "posso gastar?" ---------------- */
+function fillCalcFontes(){
+  var sel=document.getElementById('cFonte');
+  var atual=sel.value;
+  var opts='<option value="saldo">Saldo livre do mês</option>';
+  GOALS.forEach(function(g,i){
+    if(g.tipo==='consumir') opts+='<option value="goal:'+i+'">'+esc(g.nm)+' ('+money0(g.atual)+' hoje)</option>';
+  });
+  sel.innerHTML=opts;
+  if(atual && [...sel.options].some(function(o){return o.value===atual})) sel.value=atual;
+}
+
+function diasUteisEntre(a,b){
+  var n=0, d=new Date(a);
+  while(d<=b){ var wd=d.getDay(); if(wd!==0&&wd!==6) n++; d.setDate(d.getDate()+1); }
+  return n;
+}
+
+function calcularGasto(){
+  var val=parseFloat(document.getElementById('cVal').value);
+  var ate=document.getElementById('cAte').value;
+  var fonte=document.getElementById('cFonte').value;
+  var box=document.getElementById('calcResult');
+
+  if(!val||val<=0){ box.innerHTML='<div class="calc-out bad"><div class="co-title">Digite um valor</div></div>'; return }
+  if(!ate){ box.innerHTML='<div class="calc-out bad"><div class="co-title">Escolha até quando precisa esticar</div></div>'; return }
+
+  var hoje=new Date(); hoje.setHours(0,0,0,0);
+  var alvo=new Date(ate+'T00:00:00');
+  var diasUteis=diasUteisEntre(hoje,alvo);
+  if(diasUteis<1) diasUteis=1;
+
+  var disponivel, label;
+  if(fonte==='saldo'){
+    var ents=monthEntries();
+    var inc=ents.filter(function(e){return e.kind==='in'}).reduce(function(a,e){return a+e.val},0);
+    var out=ents.filter(function(e){return e.kind==='out'}).reduce(function(a,e){return a+e.val},0);
+    disponivel=(inc>0?inc:CFG.renda)-out;
+    label='seu saldo livre do mês';
+  } else {
+    var i=parseInt(fonte.split(':')[1],10);
+    disponivel=GOALS[i].atual;
+    label='"'+GOALS[i].nm+'"';
+  }
+
+  var depois=disponivel-val;
+  var mediaAntes=disponivel/diasUteis;
+  var mediaDepois=depois/diasUteis;
+
+  var cls = depois<0 ? 'bad' : mediaDepois<15 ? 'warn' : 'ok';
+  var titulo = depois<0
+    ? 'Não fecha'
+    : mediaDepois<15
+    ? 'Fecha, mas fica apertado'
+    : 'Cabe tranquilo';
+
+  var corpo = depois<0
+    ? 'Gastando '+money0(val)+' de '+label+', falta '+money0(-depois)+' para chegar em '+
+      alvo.toLocaleDateString('pt-BR')+'. Considere reduzir o valor ou usar outra fonte.'
+    : 'Sobram '+money0(depois)+' para '+diasUteis+' dia'+(diasUteis>1?'s úteis':' útil')+
+      ' até '+alvo.toLocaleDateString('pt-BR')+' — uma média de '+money0(mediaDepois)+
+      ' por dia útil (hoje a média é '+money0(mediaAntes)+').';
+
+  box.innerHTML='<div class="calc-out '+cls+'"><div class="co-title">'+titulo+
+    '</div><div class="co-body">'+corpo+'</div></div>';
+}
+
 function editGoal(i){
-  var v=prompt('Quanto você já tem em "'+GOALS[i].nm+'"?',GOALS[i].atual);
+  var g=GOALS[i];
+  var pergunta = g.tipo==='consumir'
+    ? 'Quanto ainda resta em "'+g.nm+'"?'
+    : 'Quanto você já tem em "'+g.nm+'"?';
+  var v=prompt(pergunta,g.atual);
   if(v===null)return;
   var n=parseFloat(String(v).replace(',','.'));
   if(isNaN(n)||n<0){toast('Valor inválido');return}
-  GOALS[i].atual=n;persist();draw();toast('Meta atualizada');
+  g.atual=n;persist();draw();toast('Meta atualizada');
 }
 
 function entHtml(e,withDel){
@@ -974,15 +1080,20 @@ function draw(){
   }).join('');
 
   document.getElementById('goalList').innerHTML=GOALS.map(function(g,i){
-    var p=g.alvo>0?Math.min(g.atual/g.alvo,1):0;
+    var consumir = g.tipo==='consumir';
+    var p = g.alvo>0 ? Math.min(g.atual/g.alvo,1) : 0;
+    var pct = Math.round(p*100);
+    var corBaixa = consumir && p<0.25;
     return '<div class="goal"><div class="g1"><span class="ge">'+g.em+'</span><span class="gn">'+
-      esc(g.nm)+'</span><span class="gp num">'+Math.round(p*100)+'%</span></div>'+
-      '<span class="track"><i style="width:'+(p*100)+'%"></i></span>'+
-      '<div class="gs"><span class="num">'+money0(g.atual)+' de '+money0(g.alvo)+
-      '</span><button onclick="editGoal('+i+')">Atualizar</button></div></div>';
+      esc(g.nm)+'</span><span class="gp num'+(corBaixa?' gp-low':'')+'">'+pct+
+      (consumir?'% restante':'%')+'</span></div>'+
+      '<span class="track"><i class="'+(corBaixa?'over':'')+'" style="width:'+(p*100)+'%"></i></span>'+
+      '<div class="gs"><span class="num">'+money0(g.atual)+(consumir?' restam de ':' de ')+money0(g.alvo)+
+      '</span><button onclick="editGoal('+i+')">'+(consumir?'Atualizar saldo':'Atualizar')+'</button></div></div>';
   }).join('');
 
   drawCompare();
+  fillCalcFontes();
   drawEditBar();
 
   document.getElementById('recurList').innerHTML=(CFG.recur&&CFG.recur.length)
