@@ -1,113 +1,292 @@
 # FinanceDash
 
-App de organização financeira com integração [Pluggy](https://pluggy.ai/),
-deploy como funções serverless na Vercel.
+**FinanceDash** é uma aplicação web de organização e acompanhamento financeiro pessoal.  
+O projeto possui autenticação de usuários, armazenamento de dados, integração com a **Pluggy** para conexão de contas bancárias e análise financeira com **IA (Groq)**.
 
-## Rodar localmente
+## ✨ Funcionalidades
+
+- 🔐 Cadastro e login com e-mail e senha
+- 🔑 Autenticação por JWT
+- 💾 Persistência dos dados do usuário no Vercel KV
+- 🏦 Integração com a Pluggy para conexão de contas bancárias
+- 💳 Consulta de contas e transações bancárias
+- 🔄 Webhook da Pluggy para acompanhar alterações nos itens conectados
+- 🤖 Análise de lançamentos financeiros com IA
+- 📊 Dashboard financeiro
+- 🎯 Armazenamento de metas e carteira financeira
+- ☁️ Deploy preparado para Vercel
+
+## 🧰 Tecnologias
+
+| Tecnologia | Uso |
+|---|---|
+| HTML, CSS e JavaScript | Interface do dashboard |
+| Node.js | Backend / funções da API |
+| Vercel Serverless Functions | Execução das rotas `/api` |
+| Vercel KV / Upstash Redis | Persistência dos dados |
+| JWT | Autenticação |
+| bcryptjs | Hash das senhas |
+| Pluggy | Integração com instituições financeiras |
+| Groq | Análise financeira com IA |
+| Axios | Requisições HTTP |
+
+## 📁 Estrutura do projeto
+
+```text
+financedash-main/
+├── api/
+│   ├── auth/
+│   │   ├── login.js
+│   │   └── register.js
+│   ├── finance/
+│   │   └── analyze.js
+│   ├── pluggy/
+│   │   ├── accounts/
+│   │   │   └── [accountId]/
+│   │   │       └── transactions.js
+│   │   ├── connect-token.js
+│   │   ├── items.js
+│   │   ├── items/
+│   │   │   └── [itemId]/
+│   │   │       └── accounts.js
+│   │   └── items/[itemId].js
+│   ├── webhook/
+│   │   └── pluggy.js
+│   └── data.js
+├── lib/
+│   ├── authHelper.js
+│   ├── kv.js
+│   └── pluggyClient.js
+├── public/
+│   ├── css/
+│   │   └── styles.css
+│   ├── js/
+│   │   └── api.js
+│   ├── index.html
+│   └── login.html
+├── specs/
+│   └── sincronizar-webhook-pluggy.md
+├── .env.example
+├── .gitignore
+├── package.json
+├── package-lock.json
+└── README.md
+```
+
+## 🚀 Como executar localmente
+
+### 1. Instalar as dependências
 
 ```bash
 npm install
+```
+
+### 2. Configurar as variáveis de ambiente
+
+Crie o arquivo `.env` a partir do exemplo:
+
+```bash
 cp .env.example .env
 ```
 
-Preencha o `.env` com seus valores reais (client ID/secret da Pluggy, um
-`JWT_SECRET` forte, e o `PLUGGY_WEBHOOK_SECRET` — veja como gerar cada um
-nos comentários do próprio `.env.example`). **Nunca commite o `.env`** —
-ele já está no `.gitignore`.
+Depois preencha as credenciais necessárias.
 
-Como o projeto usa funções serverless (`api/*.js` no formato da Vercel),
-rodar local com fidelidade exige a Vercel CLI:
+> **Nunca envie o `.env` para o GitHub.** O arquivo `.env` já deve permanecer protegido pelo `.gitignore`.
+
+### 3. Executar com a Vercel CLI
+
+Como as rotas estão no formato de Serverless Functions da Vercel, a forma recomendada de testar localmente é:
 
 ```bash
-npm i -g vercel
+npm install -g vercel
 vercel dev
 ```
 
-## Variáveis de ambiente
+A aplicação ficará disponível no endereço informado pela Vercel CLI.
 
-| Variável | Para que serve |
+## 🔐 Variáveis de ambiente
+
+| Variável | Descrição |
 |---|---|
-| `JWT_SECRET` | Assina os tokens de sessão (login com email/senha) |
-| `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` | Credenciais da Pluggy — só usadas no backend, nunca expostas ao navegador |
-| `PLUGGY_BASE_URL` | Base da API da Pluggy (normalmente não precisa mudar) |
-| `PLUGGY_WEBHOOK_SECRET` | Protege a rota `/api/webhook/pluggy` — sem o valor certo na URL, a rota responde 404 |
+| `JWT_SECRET` | Chave utilizada para assinar os tokens JWT |
+| `PLUGGY_CLIENT_ID` | Client ID da integração com a Pluggy |
+| `PLUGGY_CLIENT_SECRET` | Client Secret da Pluggy |
+| `PLUGGY_BASE_URL` | URL base da API da Pluggy |
+| `PLUGGY_WEBHOOK_SECRET` | Segredo utilizado para proteger o webhook |
+| `GROQ_API_KEY` | Chave da API da Groq usada pela análise financeira com IA |
+| `KV_REST_API_URL` | URL do armazenamento KV/Redis |
+| `KV_REST_API_TOKEN` | Token de acesso ao armazenamento KV/Redis |
 
-## Deploy na Vercel
+As credenciais privadas devem existir apenas no ambiente do servidor/Vercel e no `.env` local.
 
-1. Painel Vercel → **Add New → Project** → importe este repositório
-   (`Ailtinho-Filho/financedash`).
-2. **Settings → Environment Variables** → cadastrar `JWT_SECRET`,
-   `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `PLUGGY_BASE_URL` e
-   `PLUGGY_WEBHOOK_SECRET` (valores reais, nunca os do `.env.example`).
-   Se o projeto já existia antes conectado a outra fonte, confira que as
-   variáveis do Vercel KV (`KV_REST_API_URL`, `KV_REST_API_TOKEN` etc.)
-   continuam lá — não recrie, só confirme.
-3. Redeploy.
+## 🤖 Análise financeira com IA
 
-## Cadastrar o webhook no painel da Pluggy
+A rota:
 
-1. Gere o segredo (se ainda não tiver um):
-   ```bash
-   node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
-   ```
-2. Cadastre esse valor como `PLUGGY_WEBHOOK_SECRET` na Vercel e redeploy.
-3. No painel da Pluggy → Webhooks → criar novo:
-   - **URL**: `https://SEU-APP.vercel.app/api/webhook/pluggy?secret=SEU_SEGREDO`
-   - **Evento**: `all`
-4. Teste: dispare um evento de teste no painel da Pluggy e confira os logs
-   da função na Vercel (`Deployments → Functions → api/webhook/pluggy`) —
-   deve aparecer a linha `[webhook/pluggy] evento recebido: ...`.
+```text
+POST /api/finance/analyze
+```
 
-> Nota de segurança: o segredo vai na query string da URL, então pode
-> aparecer em logs de acesso da Vercel/CDN. É um trade-off aceito pela
-> simplicidade (uma função serverless única) — dá pra migrar depois para
-> um path dinâmico (`/api/webhook/[secret].js`) sem mudar a validação.
+recebe uma descrição e um valor e utiliza a IA da Groq para retornar uma análise estruturada.
 
-## Status do item (`item:<itemId>` no KV)
-
-Quando um item é vinculado (`POST /api/pluggy/items`), o app guarda um
-registro `item:<itemId>` no KV:
+Exemplo de entrada:
 
 ```json
-{ "email": "dono@exemplo.com", "status": null, "error": null, "lastSyncedAt": null }
+{
+  "description": "Compra no supermercado",
+  "amount": 150.5
+}
 ```
 
-O webhook (`api/webhook/pluggy.js`) atualiza esse registro conforme os
-eventos chegam da Pluggy:
+A análise retorna informações como:
 
-- `item/created`, `item/updated`, `item/error`, `item/waiting_user_input`,
-  `item/waiting_user_action`, `item/login_succeeded` → `status` vira o nome
-  do evento sem o prefixo `item/` (ex: `"error"`), e `error` guarda
-  `{ code, message }` quando a Pluggy manda.
-- `transactions/created`, `transactions/updated`, `transactions/deleted` →
-  só atualiza `lastSyncedAt` (o app não cacheia transações, busca sempre
-  ao vivo na Pluggy — não há dado pra invalidar).
-- `item/deleted` → remove o item do usuário e apaga o registro.
-- Qualquer outro evento (pagamentos, etc.) → só é logado, ignorado.
-
-Itens vinculados **antes** dessa mudança não têm registro — o webhook trata
-isso como caso normal (loga e ignora), não como erro.
-
-Pra consultar o status de um item:
-
-```
-GET /api/pluggy/items/:itemId
-Authorization: Bearer <token>
+```json
+{
+  "category": "Alimentação",
+  "type": "EXPENSE",
+  "is_anomaly": false,
+  "insight": "..."
+}
 ```
 
-Retorna `{ status, error, lastSyncedAt }`, ou `404` se o item não existir
-ou não pertencer ao usuário autenticado.
+A IA é orientada a retornar:
 
-## Estrutura
+- `category` — categoria financeira
+- `type` — `EXPENSE` ou `INCOME`
+- `is_anomaly` — indica possível anomalia
+- `insight` — resumo/insight financeiro
 
+## 🏦 Integração com Pluggy
+
+O FinanceDash utiliza a Pluggy para conectar instituições financeiras e consultar informações de contas e transações.
+
+Principais operações:
+
+```text
+/api/pluggy/connect-token
+/api/pluggy/items
+/api/pluggy/items/:itemId
+/api/pluggy/items/:itemId/accounts
+/api/pluggy/accounts/:accountId/transactions
 ```
-api/
-  auth/           → login, registro (JWT)
-  pluggy/         → connect-token, items, accounts, transactions
-  webhook/        → recebe eventos da Pluggy (protegido por segredo)
-lib/
-  authHelper.js   → valida JWT nas rotas protegidas
-  kv.js           → persistência de usuários e status de item (Vercel KV)
-  pluggyClient.js → cliente HTTP da API da Pluggy
-public/           → frontend estático (login, dashboard)
+
+As transações são consultadas diretamente na API da Pluggy; o projeto não utiliza um cache próprio de transações.
+
+## 🔄 Webhook da Pluggy
+
+O endpoint:
+
+```text
+/api/webhook/pluggy
 ```
+
+recebe eventos enviados pela Pluggy.
+
+O projeto acompanha eventos relacionados ao estado dos itens conectados, como:
+
+```text
+item/created
+item/updated
+item/error
+item/waiting_user_input
+item/waiting_user_action
+item/login_succeeded
+item/deleted
+```
+
+Eventos de transações atualizam o horário de sincronização:
+
+```text
+transactions/created
+transactions/updated
+transactions/deleted
+```
+
+Eventos que não são utilizados pelo FinanceDash são apenas registrados e ignorados.
+
+### Configuração do webhook
+
+Gere um segredo seguro:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
+```
+
+Cadastre o resultado como `PLUGGY_WEBHOOK_SECRET` no ambiente da Vercel.
+
+Depois, no painel da Pluggy, configure uma URL semelhante a:
+
+```text
+https://SEU-APP.vercel.app/api/webhook/pluggy?secret=SEU_SEGREDO
+```
+
+Para testar, envie um evento pelo painel da Pluggy e confira os logs da função na Vercel.
+
+## 💾 Dados do usuário
+
+Os dados financeiros do usuário são armazenados em um documento no KV.
+
+A API:
+
+```text
+GET /api/data
+PUT /api/data
+```
+
+é protegida por JWT.
+
+O documento pode conter:
+
+- lançamentos financeiros (`db`)
+- configurações (`cfg`)
+- metas (`goals`)
+- carteira financeira (`pf`)
+
+O backend também registra `updatedAt` para controle da última atualização.
+
+## 🔒 Segurança
+
+- Senhas são armazenadas usando `bcryptjs`.
+- Sessões utilizam JWT com validade de 7 dias.
+- Credenciais da Pluggy e Groq ficam no backend.
+- O webhook é protegido por segredo.
+- O `.env` não deve ser versionado.
+- Rotas de dados e operações privadas exigem autenticação.
+
+## ☁️ Deploy na Vercel
+
+1. Acesse a Vercel e importe o repositório do FinanceDash.
+2. Configure as variáveis de ambiente do projeto.
+3. Confirme as variáveis do KV/Redis.
+4. Faça o deploy.
+5. Configure o webhook da Pluggy apontando para a URL de produção.
+
+Depois do deploy, verifique os logs das funções em:
+
+```text
+Vercel → Deployments → Functions
+```
+
+## 📌 Estado atual
+
+O projeto está estruturado para:
+
+- frontend estático em `public/`;
+- APIs serverless em `api/`;
+- funções auxiliares em `lib/`;
+- especificações técnicas em `specs/`;
+- integração bancária via Pluggy;
+- persistência via KV/Redis;
+- análise financeira utilizando IA.
+
+## 📄 Especificações
+
+A pasta `specs/` contém documentos técnicos relacionados ao desenvolvimento do projeto, incluindo a especificação da sincronização do webhook da Pluggy:
+
+```text
+specs/sincronizar-webhook-pluggy.md
+```
+
+---
+
+**FinanceDash** — organização financeira pessoal com integração bancária e inteligência artificial.
