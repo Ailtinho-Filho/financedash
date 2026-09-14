@@ -119,6 +119,15 @@ header{padding:calc(env(safe-area-inset-top) + 22px) 0 14px;display:flex;align-i
 .calc-out.bad .co-title{color:var(--rust)}
 .calc-out .co-body{font-size:12.5px;color:var(--ink-2);line-height:1.5}
 
+.insight{display:flex;gap:11px;align-items:flex-start;border-radius:14px;padding:13px 14px;margin-bottom:8px}
+.insight .ii{font-size:18px;line-height:1;flex-shrink:0;margin-top:1px}
+.insight .it{font-size:13.5px;font-weight:600;margin-bottom:2px}
+.insight .ib{font-size:12.5px;line-height:1.45}
+.insight.bad{background:var(--rust-soft)} .insight.bad .it{color:var(--rust)} .insight.bad .ib{color:#8a3520}
+.insight.warn{background:var(--gold-soft)} .insight.warn .it{color:#8A6512} .insight.warn .ib{color:#6b4f10}
+.insight.good{background:var(--pine-soft)} .insight.good .it{color:var(--pine)} .insight.good .ib{color:var(--ink-2)}
+.insight.info{background:var(--paper-2);border:1px solid var(--line)} .insight.info .it{color:var(--ink)} .insight.info .ib{color:var(--ink-3)}
+
 .donut-wrap{display:flex;align-items:center;gap:16px}
 .donut{width:132px;height:132px;flex-shrink:0}
 .donut circle{fill:none;stroke-width:15}
@@ -262,6 +271,8 @@ nav button.add span{color:var(--ink-3)}
   </header>
 
   <section id="v-home" class="view on">
+    <div id="insights"></div>
+
     <div class="hero">
       <span class="cap">Livre para gastar até o fim do mês</span>
       <div class="big num" id="hSaldo">—</div>
@@ -761,6 +772,106 @@ function delRecur(i){
 }
 
 /* ---------------- comparação entre meses ---------------- */
+/* ---------------- insights automáticos ---------------- */
+/* Tudo aqui roda sobre os dados que já existem no aparelho — sem
+   chamada de API. É a "camada 1" de inteligência: regras diretas,
+   não um modelo de linguagem. As camadas seguintes (categorizar
+   sozinho, ler PDF, responder perguntas) usam IA de verdade e
+   exigem uma rota de backend own o app ainda não tem. */
+function gerarInsights(){
+  var out=[];
+  var now=new Date(), isNow=key(now)===key(ref);
+  var ents=monthEntries();
+  var inc=ents.filter(function(e){return e.kind==='in'}).reduce(function(a,e){return a+e.val},0);
+  var saidas=ents.filter(function(e){return e.kind==='out'}).reduce(function(a,e){return a+e.val},0);
+  var base=inc>0?inc:CFG.renda;
+  var saldo=base-saidas;
+
+  // 1. Mês no vermelho
+  if(saidas>base && base>0){
+    out.push({tipo:'bad', ic:'\u{1F6A8}', tit:'Este mês já está no vermelho',
+      txt:'Saiu '+money0(saidas)+' contra '+money0(base)+' de entrada — '+money0(saidas-base)+' a mais do que entrou.'});
+  }
+
+  // 2. Categorias estouradas no orçamento
+  var bycat={}; ents.forEach(function(e){if(e.kind==='out')bycat[e.cat]=(bycat[e.cat]||0)+e.val});
+  var estouradas=CATS.filter(function(c){return CFG.orc[c.id]>0 && (bycat[c.id]||0)>CFG.orc[c.id]});
+  if(estouradas.length){
+    var maior=estouradas.sort(function(a,b){return (bycat[b.id]-CFG.orc[b.id])-(bycat[a.id]-CFG.orc[a.id])})[0];
+    var dif=bycat[maior.id]-CFG.orc[maior.id];
+    out.push({tipo:'warn', ic:maior.em, tit:maior.nm+' passou do orçamento',
+      txt:money0(bycat[maior.id])+' de '+money0(CFG.orc[maior.id])+' previstos — '+money0(dif)+' acima'+
+      (estouradas.length>1?', e mais '+(estouradas.length-1)+' categoria'+(estouradas.length>2?'s':'')+' também estourou.':'.')});
+  }
+
+  // 3. Semana atual perto ou acima do teto
+  if(isNow){
+    var semN=Math.min(Math.ceil(now.getDate()/7),5);
+    var gSem=ents.filter(function(e){return e.kind==='out'&&isVar(e.cat)&&weekOf(e.date)===semN})
+      .reduce(function(a,e){return a+e.val},0);
+    if(gSem>CFG.teto){
+      out.push({tipo:'bad', ic:'\u{1F4C5}', tit:'Semana já passou do teto',
+        txt:money0(gSem)+' de '+money0(CFG.teto)+' — '+money0(gSem-CFG.teto)+' acima do combinado para esta semana.'});
+    } else if(gSem>CFG.teto*0.8){
+      out.push({tipo:'warn', ic:'\u{1F4C5}', tit:'Semana quase no limite',
+        txt:'Já foram '+money0(gSem)+' de '+money0(CFG.teto)+'. Restam '+money0(CFG.teto-gSem)+' até domingo.'});
+    }
+  }
+
+  // 4. Categoria subindo forte mês a mês (comparando com a média dos 2 anteriores)
+  var meses=lastMonths(3);
+  if(meses.length===3){
+    var porMes=meses.map(function(m){
+      var es=DB.filter(function(e){return e.date.slice(0,7)===m.k && e.kind==='out'});
+      var by={}; es.forEach(function(e){by[e.cat]=(by[e.cat]||0)+e.val}); return by;
+    });
+    var catsTodas={}; porMes.forEach(function(by){Object.keys(by).forEach(function(c){catsTodas[c]=1})});
+    var pior=null;
+    Object.keys(catsTodas).forEach(function(c){
+      var m0=porMes[0][c]||0, m1=porMes[1][c]||0, m2=porMes[2][c]||0;
+      var mediaAntes=(m0+m1)/2;
+      if(mediaAntes>=20 && m2>mediaAntes*1.5){
+        var alta=m2-mediaAntes;
+        if(!pior || alta>pior.alta) pior={cat:c, alta:alta, atual:m2, media:mediaAntes};
+      }
+    });
+    if(pior){
+      out.push({tipo:'info', ic:cat(pior.cat).em, tit:cat(pior.cat).nm+' subiu forte',
+        txt:'Estava em média '+money0(pior.media)+' e foi para '+money0(pior.atual)+' este mês.'});
+    }
+  }
+
+  // 5. Fixos pendentes que vão pesar
+  var pend=pendingRecur().filter(function(r){return r.kind==='out'});
+  if(pend.length>=3){
+    var totalPend=pend.reduce(function(a,r){return a+r.val},0);
+    out.push({tipo:'info', ic:'\u{1F4CC}', tit:pend.length+' fixos ainda não entraram',
+      txt:'Somam '+money0(totalPend)+'. O saldo livre já considera isso na projeção acima.'});
+  }
+
+  // 6. Nenhum problema — reforço positivo, não fica mudo
+  if(!out.length){
+    if(saldo>200){
+      out.push({tipo:'good', ic:'\u2705', tit:'Mês sob controle',
+        txt:'Sobram '+money0(saldo)+' até agora, sem categoria estourada. Bom momento para separar algo para a reserva.'});
+    } else if(isNow){
+      out.push({tipo:'info', ic:'\u{1F440}', tit:'Nada fora do previsto por enquanto',
+        txt:'Continue registrando os gastos para acompanhar o mês de perto.'});
+    }
+  }
+
+  return out.slice(0,3); // no máximo 3, para não virar parede de texto
+}
+
+function drawInsights(){
+  var box=document.getElementById('insights');
+  var list=gerarInsights();
+  box.innerHTML=list.map(function(i){
+    return '<div class="insight '+i.tipo+'"><div class="ii">'+i.ic+'</div><div>'+
+      '<div class="it">'+esc(i.tit)+'</div><div class="ib">'+esc(i.txt)+'</div></div></div>';
+  }).join('');
+}
+
 function lastMonths(n){
   var out=[];
   for(var i=n-1;i>=0;i--){
@@ -1094,6 +1205,7 @@ function draw(){
 
   drawCompare();
   fillCalcFontes();
+  drawInsights();
   drawEditBar();
 
   document.getElementById('recurList').innerHTML=(CFG.recur&&CFG.recur.length)
