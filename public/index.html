@@ -106,6 +106,10 @@ header{padding:calc(env(safe-area-inset-top) + 22px) 0 14px;display:flex;align-i
 .meter i.warn{background:var(--gold)} .meter i.over{background:var(--rust)}
 .weekbox .note{font-size:12px;color:var(--ink-3);margin-top:8px}
 
+.calc-panel{display:flex;flex-direction:column;gap:11px}
+.calc-row{display:grid;grid-template-columns:1fr 1.3fr;gap:10px}
+.calc-btn{margin-top:2px}
+.calc-out{border-radius:14px;padding:14px 15px;margin-top:2px}
 .calc-out.ok{background:var(--pine-soft)}
 .calc-out.warn{background:var(--gold-soft)}
 .calc-out.bad{background:var(--rust-soft)}
@@ -181,6 +185,13 @@ input:focus,select:focus{border-color:var(--pine);box-shadow:0 0 0 3px var(--pin
 .catgrid button.on{border-color:var(--ink);background:var(--ink)}
 .catgrid button.on span:last-child{color:var(--paper-2)}
 .err{font-size:13px;color:var(--rust);background:var(--rust-soft);border-radius:10px;padding:9px 12px;margin-bottom:12px;display:none}
+
+.ia-chip{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:6px 12px;border-radius:999px;background:var(--pine-soft);border:1px solid #C9DFD1;font-size:12.5px;color:var(--pine);cursor:pointer}
+.ia-chip:active{opacity:.8}
+.ia-chip .ia-dot{width:6px;height:6px;border-radius:99px;background:var(--pine);flex-shrink:0}
+.ia-chip.low{background:var(--gold-soft);border-color:#E8D5A8;color:#8A6512}
+.ia-chip.low .ia-dot{background:var(--gold)}
+.ia-loading{font-size:12px;color:var(--ink-3);margin-top:8px;display:flex;align-items:center;gap:6px}
 .primary{width:100%;border:0;background:var(--ink);color:var(--paper-2);border-radius:14px;padding:15px;font-size:15.5px;font-weight:600;cursor:pointer}
 .primary.inc{background:var(--pine)}
 .primary:active{opacity:.86}
@@ -331,7 +342,10 @@ nav button.add span{color:var(--ink-3)}
       <label id="catLbl">Categoria</label>
       <div class="catgrid" id="catGrid"></div>
     </div>
-    <div class="field"><label for="fDesc">Descrição</label><input type="text" id="fDesc" placeholder="Opcional — ex: mercado do mês"></div>
+    <div class="field"><label for="fDesc">Descrição</label>
+      <input type="text" id="fDesc" placeholder="Opcional — ex: mercado do mês" onblur="tentarCategorizarIA()">
+      <div id="iaSuggest"></div>
+    </div>
     <div class="row2">
       <div class="field"><label for="fDate">Data</label><input type="date" id="fDate"></div>
       <div class="field" id="pmtField"><label for="fPmt">Pagamento</label>
@@ -667,6 +681,7 @@ function setType(t){
   document.getElementById('pmtField').style.display=t==='in'?'none':'';
   pick=t==='in'?'salario':'mercado';
   drawCatGrid(); drawChips();
+  var box=document.getElementById('iaSuggest'); if(box) box.innerHTML='';
 }
 function drawChips(){
   var vals=type==='in'?[1500,263.66,100,50]:[10,20,50,100];
@@ -683,6 +698,41 @@ function drawCatGrid(){
       '\')"><span>'+c.em+'</span><span>'+c.nm+'</span></button>'}).join('');
 }
 function pickCat(id){pick=id;drawCatGrid()}
+
+/* ---------------- categorização por IA (Parte 2) ----------------
+   Dispara quando o usuário sai do campo de descrição. Sugestão aparece
+   como um chip — nunca troca a categoria sozinha, sempre pede um toque
+   para confirmar. Falha em silêncio: sem chave configurada ou sem rede,
+   o formulário continua funcionando normalmente sem a sugestão. */
+var iaReqId = 0;
+function tentarCategorizarIA(){
+  var desc=document.getElementById('fDesc').value.trim();
+  var box=document.getElementById('iaSuggest');
+  if(desc.length<3){ box.innerHTML=''; return }
+  if(!token()){ box.innerHTML=''; return } // recurso exige conta logada, pois passa pelo backend autenticado
+
+  var myReq=++iaReqId;
+  box.innerHTML='<div class="ia-loading">Sugerindo categoria...</div>';
+
+  fetch('/api/categorize',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},
+    body:JSON.stringify({desc:desc, kind:type})
+  }).then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json() })
+    .then(function(j){
+      if(myReq!==iaReqId) return; // resposta antiga, descarta (usuário já digitou outra coisa)
+      if(!j.cat || j.cat===pick){ box.innerHTML=''; return }
+      var c=cat(j.cat);
+      var baixa=j.confidence<0.6;
+      box.innerHTML='<button type="button" class="ia-chip'+(baixa?' low':'')+'" onclick="aplicarSugestaoIA(\''+j.cat+'\')">'+
+        '<span class="ia-dot"></span>Categorizar como '+c.em+' '+c.nm+'</button>';
+    }).catch(function(){ box.innerHTML='' }); // sem chave configurada, sem rede, etc — falha silenciosa de propósito
+}
+function aplicarSugestaoIA(catId){
+  pick=catId; drawCatGrid();
+  document.getElementById('iaSuggest').innerHTML='';
+  toast('Categoria aplicada');
+}
 
 function save(){
   var val=parseFloat(document.getElementById('fVal').value);
