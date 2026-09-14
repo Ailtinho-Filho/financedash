@@ -191,6 +191,8 @@ input:focus,select:focus{border-color:var(--pine);box-shadow:0 0 0 3px var(--pin
 .ia-chip .ia-dot{width:6px;height:6px;border-radius:99px;background:var(--pine);flex-shrink:0}
 .ia-chip.low{background:var(--gold-soft);border-color:#E8D5A8;color:#8A6512}
 .ia-chip.low .ia-dot{background:var(--gold)}
+.ia-chip.ok-match{background:var(--paper-2);border-color:var(--line);color:var(--ink-3)}
+.ia-chip.ok-match .ia-dot{background:var(--ink-3)}
 .ia-loading{font-size:12px;color:var(--ink-3);margin-top:8px;display:flex;align-items:center;gap:6px}
 .primary{width:100%;border:0;background:var(--ink);color:var(--paper-2);border-radius:14px;padding:15px;font-size:15.5px;font-weight:600;cursor:pointer}
 .primary.inc{background:var(--pine)}
@@ -488,6 +490,7 @@ if(!GOALS.some(function(g){return g.nm.indexOf('Caixinha ML')===0})){
 var PF    = load('mc_pf', PF_PAD);
 
 var ref = new Date(), type = 'out', pick = 'mercado', openAsset = null, editId = null;
+var iaReqId = 0, iaTimer = null;
 
 /* ---------------- sincronização com o servidor ----------------
    O localStorage continua sendo a fonte imediata: o app abre e grava
@@ -681,6 +684,7 @@ function setType(t){
   document.getElementById('pmtField').style.display=t==='in'?'none':'';
   pick=t==='in'?'salario':'mercado';
   drawCatGrid(); drawChips();
+  clearTimeout(iaTimer);
   var box=document.getElementById('iaSuggest'); if(box) box.innerHTML='';
 }
 function drawChips(){
@@ -704,29 +708,35 @@ function pickCat(id){pick=id;drawCatGrid()}
    como um chip — nunca troca a categoria sozinha, sempre pede um toque
    para confirmar. Falha em silêncio: sem chave configurada ou sem rede,
    o formulário continua funcionando normalmente sem a sugestão. */
-var iaReqId = 0;
 function tentarCategorizarIA(){
-  var desc=document.getElementById('fDesc').value.trim();
-  var box=document.getElementById('iaSuggest');
-  if(desc.length<3){ box.innerHTML=''; return }
-  if(!token()){ box.innerHTML=''; return } // recurso exige conta logada, pois passa pelo backend autenticado
+  clearTimeout(iaTimer);
+  // pequeno atraso: no celular, tocar em outro campo dispara blur mais de
+  // uma vez em sequência às vezes — espera a poeira baixar antes de chamar
+  iaTimer = setTimeout(function(){
+    var desc=document.getElementById('fDesc').value.trim();
+    var box=document.getElementById('iaSuggest');
+    if(desc.length<3){ box.innerHTML=''; return }
+    if(!token()){ box.innerHTML=''; return }
 
-  var myReq=++iaReqId;
-  box.innerHTML='<div class="ia-loading">Sugerindo categoria...</div>';
+    var myReq=++iaReqId;
+    box.innerHTML='<div class="ia-loading">Sugerindo categoria...</div>';
 
-  fetch('/api/categorize',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},
-    body:JSON.stringify({desc:desc, kind:type})
-  }).then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json() })
-    .then(function(j){
-      if(myReq!==iaReqId) return; // resposta antiga, descarta (usuário já digitou outra coisa)
-      if(!j.cat || j.cat===pick){ box.innerHTML=''; return }
-      var c=cat(j.cat);
-      var baixa=j.confidence<0.6;
-      box.innerHTML='<button type="button" class="ia-chip'+(baixa?' low':'')+'" onclick="aplicarSugestaoIA(\''+j.cat+'\')">'+
-        '<span class="ia-dot"></span>Categorizar como '+c.em+' '+c.nm+'</button>';
-    }).catch(function(){ box.innerHTML='' }); // sem chave configurada, sem rede, etc — falha silenciosa de propósito
+    fetch('/api/categorize',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},
+      body:JSON.stringify({desc:desc, kind:type})
+    }).then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json() })
+      .then(function(j){
+        if(myReq!==iaReqId) return; // uma chamada mais nova já está em andamento — não sobrescreve
+        if(!j.cat){ box.innerHTML=''; return }
+        var c=cat(j.cat);
+        var jaEsta = j.cat===pick;
+        var baixa=j.confidence<0.6;
+        var texto = jaEsta ? 'Confirmado: '+c.em+' '+c.nm : 'Categorizar como '+c.em+' '+c.nm;
+        box.innerHTML='<button type="button" class="ia-chip'+(baixa?' low':'')+(jaEsta?' ok-match':'')+'" onclick="aplicarSugestaoIA(\''+j.cat+'\')">'+
+          '<span class="ia-dot"></span>'+texto+'</button>';
+      }).catch(function(){ box.innerHTML='' });
+  }, 300);
 }
 function aplicarSugestaoIA(catId){
   pick=catId; drawCatGrid();
